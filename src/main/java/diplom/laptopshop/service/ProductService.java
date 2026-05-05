@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -26,11 +27,13 @@ public class ProductService {
 
     @Transactional
     public ProductResponseDTO createProduct(ProductCreateDTO createDTO) {
-        // Upload image to Cloudinary
-        String imageUrl = cloudinaryService.uploadImage(
-                createDTO.getImageUrl(),
-                cloudinaryFolder
-        );
+        // Validate and upload image
+        MultipartFile imageFile = createDTO.getImageUrl();
+        if (imageFile == null || imageFile.isEmpty()) {
+            throw new RuntimeException("Image file is required");
+        }
+
+        String imageUrl = cloudinaryService.uploadImage(imageFile, cloudinaryFolder);
 
         // Create product entity
         Product product = Product.builder()
@@ -43,6 +46,37 @@ public class ProductService {
         log.info("Product created with ID: {}", savedProduct.getId());
 
         return convertToResponseDTO(savedProduct);
+    }
+
+    @Transactional
+    public ProductResponseDTO updateProduct(Long id, ProductCreateDTO updateDTO) {
+        // Find existing product
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+
+        // Update price and description
+        product.setPrice(updateDTO.getPrice());
+        product.setDescription(updateDTO.getDescription());
+
+        // Handle image update if new file provided
+        MultipartFile newImageFile = updateDTO.getImageUrl();
+        if (newImageFile != null && !newImageFile.isEmpty()) {
+            // Delete old image from Cloudinary
+            if (product.getImageUrl() != null && !product.getImageUrl().isEmpty()) {
+                cloudinaryService.deleteImage(product.getImageUrl());
+                log.info("Old image deleted: {}", product.getImageUrl());
+            }
+
+            // Upload new image
+            String newImageUrl = cloudinaryService.uploadImage(newImageFile, cloudinaryFolder);
+            product.setImageUrl(newImageUrl);
+            log.info("New image uploaded: {}", newImageUrl);
+        }
+
+        Product updatedProduct = productRepository.save(product);
+        log.info("Product updated with ID: {}", updatedProduct.getId());
+
+        return convertToResponseDTO(updatedProduct);
     }
 
     @Transactional(readOnly = true)
@@ -61,30 +95,6 @@ public class ProductService {
     }
 
     @Transactional
-    public ProductResponseDTO updateProduct(Long id, ProductCreateDTO updateDTO) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
-
-        // If new image uploaded, delete old one and upload new
-        if (updateDTO.getImageUrl() != null && !updateDTO.getImageUrl().isEmpty()) {
-            cloudinaryService.deleteImage(product.getImageUrl());
-            String newImageUrl = cloudinaryService.uploadImage(
-                    updateDTO.getImageUrl(),
-                    cloudinaryFolder
-            );
-            product.setImageUrl(newImageUrl);
-        }
-
-        product.setPrice(updateDTO.getPrice());
-        product.setDescription(updateDTO.getDescription());
-
-        Product updatedProduct = productRepository.save(product);
-        log.info("Product updated with ID: {}", updatedProduct.getId());
-
-        return convertToResponseDTO(updatedProduct);
-    }
-
-    @Transactional
     public void deleteProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
@@ -92,6 +102,7 @@ public class ProductService {
         // Delete image from Cloudinary
         if (product.getImageUrl() != null && !product.getImageUrl().isEmpty()) {
             cloudinaryService.deleteImage(product.getImageUrl());
+            log.info("Image deleted from Cloudinary: {}", product.getImageUrl());
         }
 
         // Delete from database

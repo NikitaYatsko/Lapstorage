@@ -40,10 +40,10 @@ public class ProductController {
     }
 
     // UPDATE - обновить продукт
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}", consumes = "multipart/form-data")
     public ResponseEntity<ProductResponseDTO> updateProduct(
             @PathVariable Long id,
-            @Valid @RequestBody ProductCreateDTO updateDTO) {
+            @Valid @ModelAttribute ProductCreateDTO updateDTO) {
         ProductResponseDTO updatedProduct = productService.updateProduct(id, updateDTO);
         return ResponseEntity.ok(updatedProduct);
     }
